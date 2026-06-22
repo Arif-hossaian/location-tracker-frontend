@@ -11,7 +11,13 @@ import {
 } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Panel, Readout } from './primitives';
-import { formatDistance, formatEta, isAtHome, parseHomeFromEnv, resolveHome } from '../utils/geo';
+import {
+  formatDistance,
+  formatEta,
+  isAtHome,
+  parseHomeFromEnv,
+  resolveHome,
+} from '../utils/geo';
 import type { GeoLocation, NavigationStatus } from '../types';
 import type { Theme } from '../hooks/useTheme';
 
@@ -177,12 +183,10 @@ export function NavigationMapCard({
       ? [location.latitude, location.longitude]
       : null;
 
-  const accuracy =
-    navigation?.current.accuracy ?? location?.accuracy ?? 0;
+  const accuracy = navigation?.current.accuracy ?? location?.accuracy ?? 0;
 
   const atHome =
-    navigation !== null &&
-    isAtHome(navigation.distance.meters, accuracy);
+    navigation !== null && isAtHome(navigation.distance.meters, accuracy);
 
   const mapCenter: [number, number] = currentPos ?? homePos ?? [0, 0];
   const mapZoom = atHome ? 18 : currentPos && homePos ? 14 : 13;
@@ -202,14 +206,14 @@ export function NavigationMapCard({
   return (
     <Panel
       label="Navigation to Home"
-      tag={
-        navigation
-          ? formatDistance(
-              navigation.distance.meters,
-              navigation.distance.kilometers,
-            )
-          : 'waiting'
-      }
+      // tag={
+      //   navigation
+      //     ? formatDistance(
+      //         navigation.distance.meters,
+      //         navigation.distance.kilometers,
+      //       )
+      //     : 'waiting'
+      // }
     >
       {!homePos ? (
         <div className="nav-empty">
@@ -224,14 +228,7 @@ export function NavigationMapCard({
         <>
           {navigation && (
             <div className="nav-hud">
-              <div
-                className={`nav-hud__distance${atHome ? ' nav-hud__distance--home' : ''}`}
-              >
-                {formatDistance(
-                  navigation.distance.meters,
-                  navigation.distance.kilometers,
-                )}
-              </div>
+           
               <div className="nav-hud__meta">
                 {atHome ? (
                   <span>You are at home</span>

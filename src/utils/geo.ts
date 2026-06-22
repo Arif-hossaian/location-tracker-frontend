@@ -126,7 +126,10 @@ export function resolveHome(
 /** Within GPS accuracy or 50 m — treat as arrived at home. */
 export const AT_HOME_THRESHOLD_M = 50;
 
-export function isAtHome(distanceMeters: number, accuracyMeters: number): boolean {
+export function isAtHome(
+  distanceMeters: number,
+  accuracyMeters: number,
+): boolean {
   return distanceMeters <= Math.max(accuracyMeters, AT_HOME_THRESHOLD_M);
 }
 
