@@ -3,7 +3,12 @@ import { useGeolocation } from './useGeolocation';
 import { useLocalStorage } from './useLocalStorage';
 import { sendLocation } from '../services/api';
 import { generateSessionId } from '../utils/format';
-import { buildNavigationStatus, parseHomeFromEnv } from '../utils/geo';
+import {
+  buildNavigationStatus,
+  parseHomeFromEnv,
+  resolveHome,
+  type LatLng,
+} from '../utils/geo';
 import type {
   ApiStats,
   DeviceInfo,
@@ -97,7 +102,8 @@ export function useTrackingSession(
   const [history, setHistory] = useState<GeoLocation[]>([]);
   const [apiStats, setApiStats] = useState<ApiStats>(INITIAL_API_STATS);
   const [navigation, setNavigation] = useState<NavigationStatus | null>(null);
-  const homeRef = useRef(parseHomeFromEnv());
+  const envHome = useMemo(() => parseHomeFromEnv(), []);
+  const homeRef = useRef<LatLng | null>(envHome);
 
   // Keep device snapshot in a ref so the geolocation callback stays stable.
   const deviceRef = useRef<DeviceInfo | null>(device);
@@ -127,7 +133,10 @@ export function useTrackingSession(
       );
       void sendLocation(payload).then((result) => {
         if (result.navigation) {
-          homeRef.current = result.navigation.home;
+          // Env home overrides API home — backend may use a different reference point.
+          if (!envHome) {
+            homeRef.current = result.navigation.home;
+          }
           setNavigation(result.navigation);
         }
         setApiStats((prev) => ({
@@ -140,17 +149,17 @@ export function useTrackingSession(
         }));
       });
     },
-    [setPersisted],
+    [setPersisted, envHome],
   );
 
   const geo = useGeolocation(handleNewFix);
 
   const liveNavigation = useMemo((): NavigationStatus | null => {
-    const home = navigation?.home ?? homeRef.current;
-    if (!home || !geo.location) return navigation;
+    const home = resolveHome(navigation?.home, homeRef.current);
+    if (!home || !geo.location) return null;
 
     return buildNavigationStatus(sessionIdRef.current, home, geo.location);
-  }, [navigation, geo.location]);
+  }, [navigation, geo.location, envHome]);
 
   // Reflect denied permission as an error status.
   useEffect(() => {
@@ -181,6 +190,7 @@ export function useTrackingSession(
     });
     sessionIdRef.current = newId;
     setHistory([]);
+    setNavigation(null);
 
     geo.startWatching();
     setStatus('tracking');

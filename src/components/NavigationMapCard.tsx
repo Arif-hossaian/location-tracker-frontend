@@ -11,7 +11,7 @@ import {
 } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Panel, Readout } from './primitives';
-import { formatDistance, formatEta, parseHomeFromEnv } from '../utils/geo';
+import { formatDistance, formatEta, isAtHome, parseHomeFromEnv, resolveHome } from '../utils/geo';
 import type { GeoLocation, NavigationStatus } from '../types';
 import type { Theme } from '../hooks/useTheme';
 
@@ -51,25 +51,61 @@ function MapRefBridge({ mapRef }: { mapRef: MutableRefObject<L.Map | null> }) {
   return null;
 }
 
-function MapBounds({
+function MapViewportController({
   home,
   current,
   fitSignal,
+  follow,
+  atHome,
 }: {
-  home: [number, number];
-  current: [number, number];
+  home: [number, number] | null;
+  current: [number, number] | null;
   fitSignal: number;
+  follow: boolean;
+  atHome: boolean;
 }) {
   const map = useMap();
-  const didInitialFit = useRef(false);
+  const hadCurrentRef = useRef(false);
 
   useEffect(() => {
-    if (fitSignal > 0 || !didInitialFit.current) {
-      const bounds = L.latLngBounds([home, current]);
-      map.fitBounds(bounds, { padding: [56, 56], maxZoom: 17 });
-      didInitialFit.current = true;
+    if (!current) {
+      hadCurrentRef.current = false;
+      return;
     }
-  }, [map, home, current, fitSignal]);
+
+    const center = atHome && home ? home : current;
+
+    if (atHome) {
+      map.setView(center, 18);
+      hadCurrentRef.current = true;
+      return;
+    }
+
+    if (fitSignal > 0 && home) {
+      map.fitBounds(L.latLngBounds([home, current]), {
+        padding: [56, 56],
+        maxZoom: 17,
+      });
+      return;
+    }
+
+    if (!hadCurrentRef.current) {
+      if (home) {
+        map.fitBounds(L.latLngBounds([home, current]), {
+          padding: [56, 56],
+          maxZoom: 17,
+        });
+      } else {
+        map.setView(current, 16);
+      }
+      hadCurrentRef.current = true;
+      return;
+    }
+
+    if (follow) {
+      map.panTo(current, { animate: true, duration: 0.35 });
+    }
+  }, [map, home, current, fitSignal, follow, atHome]);
 
   return null;
 }
@@ -117,30 +153,39 @@ export function NavigationMapCard({
   navigation,
   location,
   theme,
+  isTracking,
 }: {
   navigation: NavigationStatus | null;
   location: GeoLocation | null;
   theme: Theme;
+  isTracking: boolean;
 }) {
   const mapRef = useRef<L.Map | null>(null);
   const [fitSignal, setFitSignal] = useState(0);
-  const home = navigation?.home ?? parseHomeFromEnv();
-  const current = navigation?.current ?? null;
-  const hasFix = current !== null || location !== null;
 
-  const currentPos: [number, number] | null = current
-    ? [current.latitude, current.longitude]
-    : location
-      ? [location.latitude, location.longitude]
-      : null;
+  // Use the same home + current pair from navigation (env home overrides API).
+  const home = navigation?.home ?? resolveHome(null, parseHomeFromEnv());
+  const hasFix = navigation?.current != null || location !== null;
 
   const homePos: [number, number] | null = home
     ? [home.latitude, home.longitude]
     : null;
 
-  const accuracy = current?.accuracy ?? location?.accuracy ?? 0;
+  const currentPos: [number, number] | null = navigation?.current
+    ? [navigation.current.latitude, navigation.current.longitude]
+    : location
+      ? [location.latitude, location.longitude]
+      : null;
+
+  const accuracy =
+    navigation?.current.accuracy ?? location?.accuracy ?? 0;
+
+  const atHome =
+    navigation !== null &&
+    isAtHome(navigation.distance.meters, accuracy);
+
   const mapCenter: [number, number] = currentPos ?? homePos ?? [0, 0];
-  const mapZoom = currentPos && homePos ? 14 : 13;
+  const mapZoom = atHome ? 18 : currentPos && homePos ? 14 : 13;
 
   const zoomIn = (): void => {
     mapRef.current?.zoomIn();
@@ -179,20 +224,28 @@ export function NavigationMapCard({
         <>
           {navigation && (
             <div className="nav-hud">
-              <div className="nav-hud__distance">
+              <div
+                className={`nav-hud__distance${atHome ? ' nav-hud__distance--home' : ''}`}
+              >
                 {formatDistance(
                   navigation.distance.meters,
                   navigation.distance.kilometers,
                 )}
               </div>
               <div className="nav-hud__meta">
-                <span>
-                  {navigation.direction.compassToHome}{' '}
-                  {Math.round(navigation.direction.bearingToHome)}° to home
-                </span>
-                <span>
-                  ETA {formatEta(navigation.travel.estimatedTimeMinutes)}
-                </span>
+                {atHome ? (
+                  <span>You are at home</span>
+                ) : (
+                  <>
+                    <span>
+                      {navigation.direction.compassToHome}{' '}
+                      {Math.round(navigation.direction.bearingToHome)}° to home
+                    </span>
+                    <span>
+                      ETA {formatEta(navigation.travel.estimatedTimeMinutes)}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -212,8 +265,12 @@ export function NavigationMapCard({
               <Marker position={homePos} icon={homeIcon} />
               {currentPos && (
                 <>
-                  <Marker position={currentPos} icon={youIcon} />
-                  {accuracy > 0 && (
+                  <Marker
+                    key={`you-${currentPos[0].toFixed(6)}-${currentPos[1].toFixed(6)}`}
+                    position={currentPos}
+                    icon={youIcon}
+                  />
+                  {accuracy > 0 && !atHome && (
                     <Circle
                       center={currentPos}
                       radius={accuracy}
@@ -226,7 +283,7 @@ export function NavigationMapCard({
                       }}
                     />
                   )}
-                  {homePos && (
+                  {homePos && !atHome && (
                     <Polyline
                       positions={[currentPos, homePos]}
                       pathOptions={{
@@ -237,18 +294,18 @@ export function NavigationMapCard({
                       }}
                     />
                   )}
-                  {homePos && (
-                    <MapBounds
-                      home={homePos}
-                      current={currentPos}
-                      fitSignal={fitSignal}
-                    />
-                  )}
+                  <MapViewportController
+                    home={homePos}
+                    current={currentPos}
+                    fitSignal={fitSignal}
+                    follow={isTracking && !atHome}
+                    atHome={atHome}
+                  />
                 </>
               )}
             </MapContainer>
 
-            {navigation && (
+            {navigation && !atHome && (
               <CompassRose bearingToHome={navigation.direction.bearingToHome} />
             )}
 
@@ -312,7 +369,11 @@ export function NavigationMapCard({
               />
               <Readout
                 label="Direction"
-                value={`${navigation.direction.compassToHome} ${Math.round(navigation.direction.bearingToHome)}°`}
+                value={
+                  atHome
+                    ? 'At home'
+                    : `${navigation.direction.compassToHome} ${Math.round(navigation.direction.bearingToHome)}°`
+                }
               />
               <Readout
                 label="Speed"
@@ -320,7 +381,11 @@ export function NavigationMapCard({
               />
               <Readout
                 label="ETA"
-                value={formatEta(navigation.travel.estimatedTimeMinutes)}
+                value={
+                  atHome
+                    ? '—'
+                    : formatEta(navigation.travel.estimatedTimeMinutes)
+                }
               />
             </div>
           )}

@@ -108,6 +108,7 @@ export default function App() {
         navigation={navigation}
         location={location}
         theme={theme}
+        isTracking={isTracking}
       />
       <TrackingStatusCard session={session} />
       <LiveCoordinatesCard location={location} onCopied={setToast} />

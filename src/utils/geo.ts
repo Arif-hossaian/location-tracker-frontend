@@ -115,6 +115,21 @@ export function parseHomeFromEnv(): LatLng | null {
   return { latitude, longitude };
 }
 
+/** Resolve home: env override wins, then API, then cached ref. */
+export function resolveHome(
+  apiHome: LatLng | null | undefined,
+  cachedHome: LatLng | null,
+): LatLng | null {
+  return parseHomeFromEnv() ?? apiHome ?? cachedHome;
+}
+
+/** Within GPS accuracy or 50 m — treat as arrived at home. */
+export const AT_HOME_THRESHOLD_M = 50;
+
+export function isAtHome(distanceMeters: number, accuracyMeters: number): boolean {
+  return distanceMeters <= Math.max(accuracyMeters, AT_HOME_THRESHOLD_M);
+}
+
 export function isNavigationStatus(value: unknown): value is NavigationStatus {
   if (!value || typeof value !== 'object') return false;
   const v = value as NavigationStatus;
@@ -129,6 +144,7 @@ export function isNavigationStatus(value: unknown): value is NavigationStatus {
 }
 
 export function formatDistance(meters: number, kilometers: number): string {
+  if (meters < AT_HOME_THRESHOLD_M) return 'At home';
   if (meters < 1000) return `${Math.round(meters)} m`;
   return `${kilometers.toFixed(2)} km`;
 }

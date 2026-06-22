@@ -613,6 +613,11 @@ button {
   line-height: 1.1;
 }
 
+.nav-hud__distance--home {
+  color: var(--cyan);
+  font-size: 28px;
+}
+
 .nav-hud__meta {
   display: flex;
   justify-content: center;

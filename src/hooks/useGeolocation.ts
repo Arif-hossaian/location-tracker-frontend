@@ -92,22 +92,28 @@ export function useGeolocation(
     if (err.code === err.PERMISSION_DENIED) setPermission('denied');
   }, []);
 
+  const applyFix = useCallback((pos: GeolocationPosition): void => {
+    const loc = toGeoLocation(pos);
+    setLocation(loc);
+    setPermission('granted');
+    setError(null);
+    onUpdateRef.current?.(loc);
+  }, []);
+
   const startWatching = useCallback((): void => {
     if (!supported || watchIdRef.current !== null) return;
     setError(null);
+
+    // Seed the UI immediately; watchPosition can take several seconds.
+    navigator.geolocation.getCurrentPosition(applyFix, handleError, WATCH_OPTIONS);
+
     watchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const loc = toGeoLocation(pos);
-        setLocation(loc);
-        setPermission('granted');
-        setError(null);
-        onUpdateRef.current?.(loc);
-      },
+      applyFix,
       handleError,
       WATCH_OPTIONS,
     );
     setIsWatching(true);
-  }, [supported, handleError]);
+  }, [supported, handleError, applyFix]);
 
   const stopWatching = useCallback((): void => {
     if (watchIdRef.current !== null) {
